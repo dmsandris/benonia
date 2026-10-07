@@ -17,8 +17,25 @@ ASSET_PACK="${ASSET_PACK:-benonia-assets-v1.zip}"
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d)"
 echo "Mengunduh $ASSET_BUCKET/$ASSET_PACK ..."
-curl -fsS --retry 3 -H "apikey: $SUPABASE_SECRET_KEY" \
-  "$SUPABASE_URL/storage/v1/object/$ASSET_BUCKET/$ASSET_PACK" -o "$tmp/assets.zip"
+note() { echo "$1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error::$1" || true; }
+fetch() { # $@ = header tambahan; hasil: kode HTTP
+  curl -sS --retry 2 -o "$tmp/assets.zip" -w '%{http_code}' -H "apikey: $SUPABASE_SECRET_KEY" "$@" \
+    "$SUPABASE_URL/storage/v1/object/$ASSET_BUCKET/$ASSET_PACK" || echo 000
+}
+code="$(fetch)"
+if [ "$code" != "200" ]; then
+  first="$code: $(head -c 300 "$tmp/assets.zip" 2>/dev/null | tr -d '\n')"
+  # sebagian endpoint Storage masih minta header Authorization juga
+  code="$(fetch -H "Authorization: Bearer $SUPABASE_SECRET_KEY")"
+fi
+if [ "$code" != "200" ]; then
+  body="$(head -c 300 "$tmp/assets.zip" 2>/dev/null | tr -d '\n')"
+  list="$(curl -sS -X POST -H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+    -H 'Content-Type: application/json' -d '{"prefix":"","limit":20}' \
+    "$SUPABASE_URL/storage/v1/object/list/$ASSET_BUCKET" | head -c 400 | tr -d '\n')"
+  note "Gagal unduh $ASSET_BUCKET/$ASSET_PACK. Coba1 [$first] Coba2 [$code: $body] Isi bucket: $list"
+  exit 1
+fi
 rm -rf web/public/assets/ts
 unzip -q "$tmp/assets.zip" -d web/public/assets
 rm -rf "$tmp"
