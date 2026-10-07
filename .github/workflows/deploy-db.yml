@@ -1,0 +1,58 @@
+name: deploy-db
+
+# Tes PGlite dulu; kalau lulus, SEMUA migrasi dijalankan ulang ke Supabase
+# dalam SATU transaksi (gagal = tidak ada yang berubah).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'test/**'
+      - 'tools/pg-harness.js'
+      - 'tools/combine-sql.js'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-db
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Tes (wajib lulus)
+        run: npm test
+
+      - name: Gabung migrasi
+        run: node tools/combine-sql.js > all.sql
+
+      - name: Pasang psql
+        run: |
+          which psql || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
+          psql --version
+
+      - name: Jalankan migrasi (satu transaksi, ulang bila bentrok kunci)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PGOPTIONS: '-c lock_timeout=15s -c statement_timeout=120s'
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then echo "Secret SUPABASE_DB_URL belum diisi."; exit 1; fi
+          for i in 1 2 3; do
+            if psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -q -f all.sql; then
+              echo "Migrasi sukses (percobaan $i)."; exit 0
+            fi
+            echo "Percobaan $i gagal, coba lagi dalam 20 detik..."; sleep 20
+          done
+          exit 1
+
+      - name: Cek api_ping
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: psql "$SUPABASE_DB_URL" -At -c "select public.api_ping('[]')"

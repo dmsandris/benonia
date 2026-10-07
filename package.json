@@ -1,0 +1,21 @@
+{
+  "name": "benonia",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node tools/test-all.js",
+    "sql": "node tools/combine-sql.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.2",
+    "phaser": "4.2.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "vite": "8.3.3"
+  }
+}
