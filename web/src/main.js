@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
+import { WorldScene } from './scenes/WorldScene.js';
+import { UIScene } from './scenes/UIScene.js';
 
-// Resolusi dasar kecil lalu diperbesar: piksel tetap tajam (pixel art 16x16).
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
@@ -13,7 +14,12 @@ const game = new Phaser.Game({
     width: window.innerWidth,
     height: window.innerHeight,
   },
-  scene: [BootScene],
+  physics: {
+    default: 'arcade',
+    arcade: { debug: false },
+  },
+  input: { activePointers: 3 },
+  scene: [BootScene, WorldScene, UIScene],
 });
 
 window.__benonia = game; // memudahkan debug dari console

@@ -27,6 +27,12 @@ tools/                harness tes, test-all, combine-sql
 | `npm run dev` | server lokal http://localhost:8787/benonia/ |
 | `npm test` | semua tes PGlite (wajib lulus sebelum deploy-db) |
 | `npm run build` | build ke `dist/` |
+| `npm run map` | buat ulang peta hutan dari `tools/mapgen/forest.js` |
+| `npm run map:preview` | render peta ke `maps/forest-preview.png` |
+
+## Peta
+
+Peta dibuat oleh skrip (`tools/mapgen/`), bukan diedit tangan. Hasilnya JSON format Tiled (`.tmj`), jadi tetap bisa dibuka di Tiled kalau perlu. Layer: `ground`, `decor`, `low` (di bawah pemain), `high` (di atas pemain), `collide` (tak terlihat), objek `spawn`.
 
 ## Aturan server (sama seperti Marantau)
 

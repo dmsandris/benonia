@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node tools/test-all.js",
-    "sql": "node tools/combine-sql.js"
+    "sql": "node tools/combine-sql.js",
+    "map": "node tools/mapgen/forest.js",
+    "map:preview": "node tools/mapgen/preview.js web/public/assets/maps/forest.tmj maps/forest-preview.png"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.2",
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
+    "pngjs": "^7.0.0",
     "vite": "8.3.3"
   }
 }
