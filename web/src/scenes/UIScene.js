@@ -13,6 +13,10 @@ export class UIScene extends Phaser.Scene {
     const style = { fontFamily: 'monospace', fontSize: '12px', color: '#f4f1de', backgroundColor: '#00000066', padding: { x: 6, y: 4 } };
     this.info = this.add.text(8, 8, '', style).setScrollFactor(0);
     this.server = 'Server: ...';
+    // bar HP + jumlah kalahkan
+    this.hpBar = this.add.graphics();
+    this.hpText = this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '12px', color: '#ffffff', stroke: '#2a1408', strokeThickness: 3 }).setOrigin(0.5);
+    this.notice = this.add.text(0, 0, '', { fontFamily: 'Georgia, serif', fontSize: '20px', color: '#f4f1de', stroke: '#2a1408', strokeThickness: 5 }).setOrigin(0.5);
     this.pingServer();
 
     // ---- joystick dinamis: sentuh di mana saja di separuh kiri layar ----
@@ -77,6 +81,12 @@ export class UIScene extends Phaser.Scene {
   update() {
     const t = this.registry.get('playerTile') || { x: 0, y: 0 };
     const fps = Math.round(this.game.loop.actualFps);
-    this.info.setText(`Benonia ${GAME_VERSION}  ·  ${fps} fps  ·  tile ${t.x},${t.y}\n${this.server}`);
+    const st = this.registry.get('stats') || { hp: 0, maxHp: 1, kills: 0 };
+    this.info.setText(`Benonia ${GAME_VERSION}  ·  ${fps} fps  ·  tile ${t.x},${t.y}\n${this.server}  ·  goblin kalah: ${st.kills}`);
+    const x = 8, y = this.info.y + this.info.height + 6, w = 180, h = 14, k = Math.max(0, st.hp / st.maxHp);
+    this.hpBar.clear().fillStyle(0x2a1408, 0.85).fillRoundedRect(x, y, w + 4, h + 4, 4)
+      .fillStyle(k > 0.3 ? 0xd94b3d : 0xff2a1a, 1).fillRoundedRect(x + 2, y + 2, w * k, h, 3);
+    this.hpText.setPosition(x + 2 + w / 2, y + 2 + h / 2).setText(`HP ${st.hp} / ${st.maxHp}`);
+    this.notice.setPosition(this.scale.width / 2, this.scale.height * 0.3).setText(this.registry.get('notice') || '');
   }
 }

@@ -180,6 +180,23 @@ for (let i = 0; i < 60; i++) {
   }
 }
 
+// titik muncul goblin: di rumput, jauh dari titik muncul pemain, saling berjauhan
+{
+  const cands = [];
+  land.each((x, y) => {
+    if (!grass.get(x, y) || used.get(x, y) || nearWater(x, y, 3) || Math.hypot(x - spawn.x, y - spawn.y) <= 7) return;
+    // padang terbuka: tidak ada pohon/semak/batu dalam radius 1 sel
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (used.get(x + dx, y + dy) && used.get(x + dx, y + dy) !== 3) return;
+    cands.push([x, y]);
+  });
+  const picked = [];
+  for (let i = 0; i < 400 && picked.length < 8; i++) {
+    const [x, y] = R.pick(cands);
+    if (picked.every(([a, b]) => Math.hypot(a - x, b - y) >= 5)) picked.push([x, y]);
+  }
+  for (const [x, y] of picked) objects.push({ type: 'goblin', ...at(x, y, 0, 0) });
+}
+
 objects.push({ name: 'spawn', type: 'spawn', x: spawn.x * TILE + TILE / 2, y: spawn.y * TILE + TILE / 2 });
 
 // ---------- 6. Simpan ----------

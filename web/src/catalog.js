@@ -68,3 +68,19 @@ export const WARRIOR = {
 // Tidak ada tile sudut-dalam; bentuk dibuat cembung oleh pembuat peta.
 export const FLAT = { file: 'ts/ground/flat.png', w: 640, h: 256 };
 export const WATER_TILE = 'ts/ground/water.png';
+
+// Musuh: Goblin obor merah. Sheet 7 kolom x 5 baris, frame 192px, menghadap kanan.
+export const GOBLIN = {
+  file: 'ts/units/goblin-torch.png', fw: 192, fh: 192, cols: 7,
+  anchor: [96, 133], body: [28, 14],
+  anims: {
+    idle: { row: 0, frames: 7, fps: 10, repeat: -1 },
+    run: { row: 1, frames: 6, fps: 12, repeat: -1 },
+    attackSide: { row: 2, frames: 6, fps: 12, repeat: 0 },
+    attackDown: { row: 3, frames: 6, fps: 12, repeat: 0 },
+    attackUp: { row: 4, frames: 6, fps: 12, repeat: 0 },
+  },
+};
+
+// Efek mati: tengkorak muncul (baris 0) lalu memudar (baris 1). Frame 128px.
+export const DEATH_FX = { file: 'ts/fx/dead.png', fw: 128, fh: 128, cols: 7, anchor: [64, 92] };

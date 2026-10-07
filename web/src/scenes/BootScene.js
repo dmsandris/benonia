@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { SPRITES, WARRIOR, FLAT, WATER_TILE } from '../catalog.js';
+import { SPRITES, WARRIOR, FLAT, WATER_TILE, GOBLIN, DEATH_FX } from '../catalog.js';
 
 // Memuat semua aset dari katalog lalu masuk ke dunia.
 export class BootScene extends Phaser.Scene {
@@ -23,6 +23,8 @@ export class BootScene extends Phaser.Scene {
     for (const [key, s] of Object.entries(SPRITES)) {
       this.load.spritesheet(key, `assets/${s.file}`, { frameWidth: s.fw, frameHeight: s.fh });
     }
+    this.load.spritesheet('goblin', `assets/${GOBLIN.file}`, { frameWidth: GOBLIN.fw, frameHeight: GOBLIN.fh });
+    this.load.spritesheet('death', `assets/${DEATH_FX.file}`, { frameWidth: DEATH_FX.fw, frameHeight: DEATH_FX.fh });
     for (const [name, a] of Object.entries(WARRIOR.anims)) {
       this.load.spritesheet(`warrior-${name}`, `assets/${a.file}`, { frameWidth: WARRIOR.fw, frameHeight: WARRIOR.fh });
     }
@@ -42,6 +44,17 @@ export class BootScene extends Phaser.Scene {
         frames: this.anims.generateFrameNumbers(`warrior-${name}`, { start: 0, end: a.frames - 1 }),
       });
     }
+    for (const [name, a] of Object.entries(GOBLIN.anims)) {
+      const start = a.row * GOBLIN.cols;
+      this.anims.create({
+        key: `goblin-${name}`, frameRate: a.fps, repeat: a.repeat,
+        frames: this.anims.generateFrameNumbers('goblin', { start, end: start + a.frames - 1 }),
+      });
+    }
+    this.anims.create({
+      key: 'death-fx', frameRate: 12, repeat: 0,
+      frames: this.anims.generateFrameNumbers('death', { start: 0, end: DEATH_FX.cols * 2 - 1 }),
+    });
     this.scene.start('World');
     this.scene.launch('UI');
   }

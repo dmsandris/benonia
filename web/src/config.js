@@ -4,4 +4,4 @@
 export const SUPABASE_URL = 'https://btwjjjhrdaffhcuperyi.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_fzRfy2VkVHWef6OHtxagHA_9ZWx84VG';
 
-export const GAME_VERSION = 'M1';
+export const GAME_VERSION = 'M2';

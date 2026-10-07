@@ -17,17 +17,10 @@ export function readMove(keys) {
   return { x, y };
 }
 
-// true sekali per tekan (keyboard Space/J atau tombol layar)
-export function attackPressed(keys) {
-  const kb = keys && (Phaser_JustDown(keys.space) || Phaser_JustDown(keys.j));
-  const tb = touchButtons.attack;
+// true sekali per tekan. Keyboard memakai event keydown (lihat WorldScene) supaya
+// tap super cepat (tekan+lepas di antara dua frame) tetap terbaca.
+export function attackPressed() {
+  const v = touchButtons.attack;
   touchButtons.attack = false;
-  return kb || tb;
-}
-
-function Phaser_JustDown(key) {
-  if (!key) return false;
-  if (key.isDown && !key._benoniaHeld) { key._benoniaHeld = true; return true; }
-  if (!key.isDown) key._benoniaHeld = false;
-  return false;
+  return v;
 }
