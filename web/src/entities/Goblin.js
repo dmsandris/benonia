@@ -5,8 +5,9 @@ import { GOBLIN_STATS as G, rollDamage, damageText, flash } from '../combat.js';
 // Goblin obor: diam/berkeliaran -> mengejar pemain -> menyerang -> kembali ke pos.
 // Logika jalan di klien (M2). Hadiah/kill akan divalidasi server di M3.
 export class Goblin extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
+  constructor(scene, x, y, spawnId) {
     super(scene, x, y, 'goblin', 0);
+    this.spawnId = spawnId;
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.home = new Phaser.Math.Vector2(x, y);

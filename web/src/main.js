@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
 import { WorldScene } from './scenes/WorldScene.js';
 import { UIScene } from './scenes/UIScene.js';
+import { TitleScene } from './scenes/TitleScene.js';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -19,7 +20,7 @@ const game = new Phaser.Game({
     arcade: { debug: false },
   },
   input: { activePointers: 3 },
-  scene: [BootScene, WorldScene, UIScene],
+  scene: [BootScene, TitleScene, WorldScene, UIScene],
 });
 
 window.__benonia = game; // memudahkan debug dari console

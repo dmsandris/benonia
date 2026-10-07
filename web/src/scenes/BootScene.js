@@ -55,7 +55,6 @@ export class BootScene extends Phaser.Scene {
       key: 'death-fx', frameRate: 12, repeat: 0,
       frames: this.anims.generateFrameNumbers('death', { start: 0, end: DEATH_FX.cols * 2 - 1 }),
     });
-    this.scene.start('World');
-    this.scene.launch('UI');
+    this.scene.start('Title');
   }
 }

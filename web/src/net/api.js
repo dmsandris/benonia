@@ -11,7 +11,8 @@ export const isConfigured = () => supabase !== null;
 
 export async function api(name, ...args) {
   if (!supabase) throw new Error('Server belum dikonfigurasi.');
-  const { data, error } = await supabase.rpc(name, { a: args });
+  // nama fungsi Postgres tanpa tanda kutip selalu huruf kecil
+  const { data, error } = await supabase.rpc(name.toLowerCase(), { a: args });
   if (error) throw new Error(error.message);
   return data;
 }

@@ -3,6 +3,9 @@ import { readMove, attackPressed, touchButtons, skillPressed } from '../controls
 import { SPRITES, WARRIOR, TILE } from '../catalog.js';
 import { PLAYER, SKILLS, rollDamage, damageText, flash } from '../combat.js';
 import { Goblin } from '../entities/Goblin.js';
+import { api } from '../net/api.js';
+
+const SAVE_EVERY = 8000; // ms
 
 const SPEED = 230; // piksel dunia per detik (±3,6 tile/detik)
 
@@ -11,6 +14,10 @@ const DEPTH = { water: -40, foam: -30, sand: -20, grass: -10 };
 
 export class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
+
+  init(data) {
+    this.profile = data.profile; // state dari server (level, exp, posisi terakhir, tas, ...)
+  }
 
   create() {
     const map = this.make.tilemap({ key: 'island' });
@@ -26,10 +33,11 @@ export class WorldScene extends Phaser.Scene {
     // ---- objek & musuh dari peta ----
     this.blockers = this.physics.add.staticGroup();
     this.enemies = this.physics.add.group({ runChildUpdate: false });
-    let spawn = { x: W / 2, y: H / 2 };
+    let spawn = { x: W / 2, y: H / 2 }, gi = 0;
     for (const o of map.getObjectLayer('objects').objects) {
       if (o.type === 'spawn') { spawn = o; continue; }
-      if (o.type === 'goblin') { this.enemies.add(new Goblin(this, o.x, o.y)); continue; }
+      // id titik muncul stabil (urutan di peta) dipakai server untuk cek respawn
+      if (o.type === 'goblin') { this.enemies.add(new Goblin(this, o.x, o.y, `goblin:${gi++}`)); continue; }
       const s = SPRITES[o.type];
       if (!s) continue;
       const spr = this.add.sprite(o.x, o.y, o.type, 0)
@@ -47,20 +55,26 @@ export class WorldScene extends Phaser.Scene {
     this.spawnPoint = { x: spawn.x, y: spawn.y };
 
     // ---- pemain ----
-    const p = this.physics.add.sprite(spawn.x, spawn.y, 'warrior-idle', 0)
+    const pr = this.profile;
+    const start = pr.x != null ? { x: pr.x, y: pr.y } : spawn;
+    const p = this.physics.add.sprite(start.x, start.y, 'warrior-idle', 0)
       .setOrigin(WARRIOR.anchor[0] / WARRIOR.fw, WARRIOR.anchor[1] / WARRIOR.fh);
     const [bw, bh] = WARRIOR.body;
     p.body.setSize(bw, bh).setOffset(WARRIOR.anchor[0] - bw / 2, WARRIOR.anchor[1] - bh);
     p.setCollideWorldBounds(true);
     p.play('warrior-idle');
-    p.hp = PLAYER.maxHp;
-    p.mp = PLAYER.maxMp;
+    p.hp = Math.max(1, pr.hp);
+    p.mp = pr.mp;
     p.dead = false;
     this.player = p;
     this.attacking = false;
     this.combo = 0;
     this.hurtUntil = 0;
-    this.kills = 0;
+    this.lastSave = { t: 0, x: -1, y: -1, hp: -1 };
+    this.time.addEvent({ delay: SAVE_EVERY, loop: true, callback: () => this.save() });
+    this.onHide = () => { if (document.visibilityState === 'hidden') this.save(true); };
+    document.addEventListener('visibilitychange', this.onHide);
+    this.events.once('shutdown', () => document.removeEventListener('visibilitychange', this.onHide));
     this.lastMove = { x: 1, y: 0 };
     this.skillReady = Object.fromEntries(SKILLS.map(k => [k.id, 0]));
     this.guardUntil = 0;
@@ -146,9 +160,61 @@ export class WorldScene extends Phaser.Scene {
     if (hits.length) this.cameras.main.shake(70, 0.004);
   }
 
+  get maxHp() { return this.profile.maxHp; }
+  get maxMp() { return this.profile.maxMp; }
+
+  // +1 damage per level di atas 1
   hitEnemy(g, range, critChance = PLAYER.critChance) {
-    const { amount, crit } = rollDamage(range, critChance, PLAYER.critMul);
-    if (g.hit(amount, crit, this.player.x)) { this.kills++; this.pushStats(); }
+    const bonus = this.profile.level - 1;
+    const { amount, crit } = rollDamage([range[0] + bonus, range[1] + bonus], critChance, PLAYER.critMul);
+    if (g.hit(amount, crit, this.player.x)) this.claimKill(g);
+  }
+
+  // ---------- server: kill, simpan, tumbang ----------
+  async claimKill(g) {
+    const x = g.x, y = g.y;
+    try {
+      const r = await api('api_claimKill', g.spawnId, 'goblin');
+      if (!r.ok) return; // ditolak server (terlalu cepat / belum respawn): tanpa hadiah
+      this.profile = r.state;
+      this.registry.set('profile', r.state);
+      let dy = 0;
+      const pop = (text, color) => { this.rewardText(x, y - 120 - dy, text, color); dy += 26; };
+      pop(`+${r.exp} EXP`, '#b9f27c');
+      pop(`+${r.zeny} Zeny`, '#ffd54a');
+      for (const d of r.drops) pop(`${d.icon} ${d.name} ×${d.qty}`, d.id === 'stone_of_dunex' ? '#7fe0ff' : '#f4f1de');
+      if (r.levelUp) this.levelUp();
+      this.pushStats();
+    } catch (e) {
+      console.warn('claimKill gagal', e);
+    }
+  }
+
+  rewardText(x, y, text, color) {
+    const t = this.add.text(x, y, text, {
+      fontFamily: 'Georgia, serif', fontStyle: 'bold', fontSize: '20px', color,
+      stroke: '#2a1408', strokeThickness: 5,
+    }).setOrigin(0.5).setDepth(100001).setAlpha(0);
+    this.tweens.add({ targets: t, alpha: 1, y: y - 10, duration: 200 });
+    this.tweens.add({ targets: t, alpha: 0, y: y - 50, delay: 1300, duration: 500, onComplete: () => t.destroy() });
+  }
+
+  levelUp() {
+    const p = this.player;
+    p.hp = this.maxHp; p.mp = this.maxMp;
+    this.ring(p.x, p.y - 30, 160, 0xffd54a);
+    this.registry.set('notice', `Naik ke level ${this.profile.level}!`);
+    this.time.delayedCall(1800, () => this.registry.get('notice')?.startsWith('Naik') && this.registry.set('notice', ''));
+  }
+
+  async save(force = false) {
+    const p = this.player, ls = this.lastSave;
+    if (p.dead) return;
+    const x = Math.round(p.x), y = Math.round(p.y), hp = Math.round(p.hp);
+    if (!force && Math.hypot(x - ls.x, y - ls.y) < 8 && hp === ls.hp) return;
+    Object.assign(ls, { x, y, hp });
+    try { await api('api_saveProgress', x, y, hp, Math.floor(p.mp)); }
+    catch (e) { console.warn('simpan gagal', e); }
   }
 
   // ---------- skill ----------
@@ -268,10 +334,12 @@ export class WorldScene extends Phaser.Scene {
     p.body.enable = false;
     const fx = this.add.sprite(p.x, p.y, 'death', 0).setOrigin(0.5, 92 / 128).setDepth(p.y);
     fx.play('death-fx'); fx.once('animationcomplete', () => fx.destroy());
-    this.registry.set('notice', 'Kamu tumbang… bangkit lagi di titik awal');
+    this.registry.set('notice', 'Kamu tumbang… EXP level ini hilang');
+    api('api_playerDied').then(st => { this.profile = st; this.registry.set('profile', st); this.pushStats(); })
+      .catch(e => console.warn('playerDied gagal', e));
     this.time.delayedCall(PLAYER.respawnMs, () => {
       p.setPosition(this.spawnPoint.x, this.spawnPoint.y).setVisible(true).setAlpha(1);
-      p.body.enable = true; p.dead = false; p.hp = PLAYER.maxHp; p.mp = PLAYER.maxMp;
+      p.body.enable = true; p.dead = false; p.hp = this.maxHp; p.mp = this.maxMp;
       this.hurtUntil = this.time.now + 1500; // kebal sebentar setelah bangkit
       this.tweens.add({ targets: p, alpha: 0.4, yoyo: true, repeat: 5, duration: 120 });
       this.registry.set('notice', '');
@@ -280,8 +348,11 @@ export class WorldScene extends Phaser.Scene {
   }
 
   pushStats() {
-    const p = this.player;
-    this.registry.set('stats', { hp: p.hp, maxHp: PLAYER.maxHp, mp: Math.floor(p.mp), maxMp: PLAYER.maxMp, kills: this.kills });
+    const p = this.player, pr = this.profile;
+    this.registry.set('stats', {
+      hp: p.hp, maxHp: this.maxHp, mp: Math.floor(p.mp), maxMp: this.maxMp,
+      kills: pr.kills, level: pr.level, exp: pr.exp, expNext: pr.expNext, zeny: pr.zeny, username: pr.username,
+    });
     this.registry.set('skills', { ready: { ...this.skillReady }, guardUntil: this.guardUntil });
   }
 
@@ -292,7 +363,7 @@ export class WorldScene extends Phaser.Scene {
 
     // MP terisi pelan
     const mpBefore = Math.floor(p.mp);
-    p.mp = Math.min(PLAYER.maxMp, p.mp + PLAYER.mpRegen * delta / 1000);
+    p.mp = Math.min(this.maxMp, p.mp + PLAYER.mpRegen * delta / 1000);
     if (Math.floor(p.mp) !== mpBefore) this.pushStats();
 
     const sk = skillPressed();

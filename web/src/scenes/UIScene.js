@@ -3,6 +3,7 @@ import { joystick, touchButtons } from '../controls.js';
 import { SKILLS } from '../combat.js';
 import { api, isConfigured } from '../net/api.js';
 import { GAME_VERSION } from '../config.js';
+import { signOut } from '../net/auth.js';
 
 const RADIUS = 48; // jangkauan jempol joystick (piksel layar)
 
@@ -18,6 +19,7 @@ export class UIScene extends Phaser.Scene {
     this.hpBar = this.add.graphics();
     this.hpText = this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '12px', color: '#ffffff', stroke: '#2a1408', strokeThickness: 3 }).setOrigin(0.5);
     this.mpText = this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '11px', color: '#ffffff', stroke: '#0d1f3a', strokeThickness: 3 }).setOrigin(0.5);
+    this.expText = this.add.text(0, 0, '', { fontFamily: 'monospace', fontSize: '11px', color: '#e8ffd0', stroke: '#2a1408', strokeThickness: 3 }).setOrigin(0, 0.5);
     this.notice = this.add.text(0, 0, '', { fontFamily: 'Georgia, serif', fontSize: '20px', color: '#f4f1de', stroke: '#2a1408', strokeThickness: 5 }).setOrigin(0.5);
     this.pingServer();
 
@@ -79,6 +81,56 @@ export class UIScene extends Phaser.Scene {
     for (const sk of SKILLS) mk(sk.id, sk.icon, sk.key, false, () => { touchButtons.skill = sk.id; });
     this.placeButtons();
     this.scale.on('resize', () => this.placeButtons());
+
+    // ---- tas (inventory) ----
+    this.bagBtn = this.add.text(0, 0, '🎒', { fontSize: '30px', backgroundColor: '#2a1408aa', padding: { x: 8, y: 4 } })
+      .setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    this.bagBtn.on('pointerdown', () => this.toggleBag());
+    this.input.keyboard?.on('keydown-I', () => this.toggleBag());
+    const placeBag = () => this.bagBtn.setPosition(this.scale.width - 8, 8);
+    placeBag(); this.scale.on('resize', placeBag);
+    this.registry.events.on('changedata-profile', () => this.bag && this.renderBag());
+    this.events.once('shutdown', () => this.bag?.remove());
+  }
+
+  toggleBag() {
+    if (this.bag) { this.bag.remove(); this.bag = null; return; }
+    this.bag = document.createElement('div');
+    this.bag.className = 'bag';
+    document.body.appendChild(this.bag);
+    this.renderBag();
+  }
+
+  renderBag() {
+    const pr = this.registry.get('profile') || { inventory: [] };
+    const st = this.registry.get('stats') || {};
+    const rows = pr.inventory.length
+      ? pr.inventory.map(i => `<li><span class="ic">${i.icon}</span><span class="nm">${i.name}<small>${i.info}</small></span><b>×${i.qty}</b></li>`).join('')
+      : '<li class="empty">Tas masih kosong. Kalahkan goblin untuk mendapat barang.</li>';
+    this.bag.innerHTML = `
+      <style>
+        .bag{position:fixed;right:8px;top:62px;width:min(300px,calc(100vw - 16px));max-height:70vh;overflow:auto;
+          background:#f4e7c6;color:#2a1408;border:3px solid #2a1408;border-radius:10px;padding:12px;font:14px Georgia,serif;
+          box-shadow:0 6px 0 #2a140855;z-index:10}
+        .bag h3{margin:0 0 2px;font-size:17px;display:flex;justify-content:space-between;align-items:baseline}
+        .bag .sub{font:12px system-ui,sans-serif;color:#6b5434;margin-bottom:8px}
+        .bag ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+        .bag li{display:flex;align-items:center;gap:8px;background:#fffaf0;border:1px solid #d9c49a;border-radius:6px;padding:6px 8px}
+        .bag .ic{font-size:22px}.bag .nm{flex:1;min-width:0;display:flex;flex-direction:column}
+        .bag small{font:11px system-ui,sans-serif;color:#7a6440}.bag b{font-variant-numeric:tabular-nums}
+        .bag .empty{justify-content:center;color:#7a6440;font:13px system-ui,sans-serif}
+        .bag .foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-variant-numeric:tabular-nums}
+        .bag button{font:bold 13px Georgia,serif;padding:7px 12px;border:2px solid #2a1408;border-radius:6px;background:#e9d3a2;cursor:pointer}
+      </style>
+      <h3>${pr.username ?? ''} <span>Lv ${pr.level ?? 1}</span></h3>
+      <div class="sub">${st.kills ?? pr.kills ?? 0} goblin dikalahkan</div>
+      <ul>${rows}</ul>
+      <div class="foot"><span>🪙 ${pr.zeny ?? 0} Zeny</span><button type="button" class="out">Keluar akun</button></div>`;
+    this.bag.querySelector('.out').addEventListener('click', async () => {
+      await this.scene.get('World').save(true);
+      await signOut();
+      location.reload();
+    });
   }
 
   placeButtons() {
@@ -136,7 +188,7 @@ export class UIScene extends Phaser.Scene {
     const fps = Math.round(this.game.loop.actualFps);
     const st = this.registry.get('stats') || { hp: 0, maxHp: 1, mp: 0, maxMp: 1, kills: 0 };
     this.drawCooldowns();
-    this.info.setText(`Benonia ${GAME_VERSION}  ·  ${fps} fps  ·  tile ${t.x},${t.y}\n${this.server}  ·  goblin kalah: ${st.kills}`);
+    this.info.setText(`${st.username ?? ''}  Lv ${st.level ?? 1}  ·  🪙 ${st.zeny ?? 0}  ·  goblin ${st.kills ?? 0}\nBenonia ${GAME_VERSION} · ${fps} fps · tile ${t.x},${t.y} · ${this.server}`);
     const x = 8, y = this.info.y + this.info.height + 6, w = 180, h = 14, k = Math.max(0, st.hp / st.maxHp);
     this.hpBar.clear().fillStyle(0x2a1408, 0.85).fillRoundedRect(x, y, w + 4, h + 4, 4)
       .fillStyle(k > 0.3 ? 0xd94b3d : 0xff2a1a, 1).fillRoundedRect(x + 2, y + 2, w * k, h, 3);
@@ -145,6 +197,10 @@ export class UIScene extends Phaser.Scene {
     this.hpBar.fillStyle(0x2a1408, 0.85).fillRoundedRect(x, y2, w + 4, h, 4)
       .fillStyle(0x3d7bd9, 1).fillRoundedRect(x + 2, y2 + 2, w * km, h - 4, 3);
     this.mpText.setPosition(x + 2 + w / 2, y2 + h / 2).setText(`MP ${st.mp} / ${st.maxMp}`);
+    const y3 = y2 + h + 6, ke = st.expNext ? Math.min(1, st.exp / st.expNext) : 0;
+    this.hpBar.fillStyle(0x2a1408, 0.85).fillRoundedRect(x, y3, w + 4, 8, 3)
+      .fillStyle(0xb9f27c, 1).fillRoundedRect(x + 2, y3 + 2, w * ke, 4, 2);
+    this.expText.setPosition(x + w + 10, y3 + 4).setText(`EXP ${st.exp ?? 0}/${st.expNext ?? 0}`);
     this.notice.setPosition(this.scale.width / 2, this.scale.height * 0.3).setText(this.registry.get('notice') || '');
   }
 }
