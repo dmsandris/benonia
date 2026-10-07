@@ -1,7 +1,7 @@
 // Arah gerak gabungan keyboard + joystick sentuh, plus tombol serang.
 // UIScene menulis joystick/tombol, WorldScene membaca hasil akhirnya.
 export const joystick = { x: 0, y: 0, active: false };
-export const touchButtons = { attack: false };
+export const touchButtons = { attack: false, skill: null };
 
 export function readMove(keys) {
   let x = 0, y = 0;
@@ -22,5 +22,12 @@ export function readMove(keys) {
 export function attackPressed() {
   const v = touchButtons.attack;
   touchButtons.attack = false;
+  return v;
+}
+
+// id skill yang diminta (keyboard 1/2/3 atau tombol layar), sekali per tekan
+export function skillPressed() {
+  const v = touchButtons.skill;
+  touchButtons.skill = null;
   return v;
 }

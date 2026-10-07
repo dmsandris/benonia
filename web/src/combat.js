@@ -3,6 +3,10 @@ import * as Phaser from 'phaser';
 
 export const PLAYER = {
   maxHp: 100,
+  maxMp: 60,
+  mpRegen: 5,          // MP per detik
+  closeRange: 88,      // musuh sedekat ini kena tebas dari arah mana pun (atas/bawah juga)
+  autoAim: 150,        // sebelum menebas, pemain otomatis menghadap musuh terdekat dalam jarak ini
   dmg: [10, 14],       // rentang damage tebasan
   critChance: 0.12,
   critMul: 2,
@@ -12,6 +16,16 @@ export const PLAYER = {
   hurtCooldown: 600,   // ms kebal setelah kena pukul
   respawnMs: 1500,
 };
+
+// Skill pemain. key = tombol keyboard, mp = biaya, cd = jeda (ms).
+export const SKILLS = [
+  { id: 'whirl', key: '1', name: 'Putaran', icon: '🌀', mp: 15, cd: 5000,
+    dmg: [16, 22], radius: 150, desc: 'Berputar menebas semua musuh di sekeliling' },
+  { id: 'dash', key: '2', name: 'Terjang', icon: '💨', mp: 12, cd: 4000,
+    dmg: [14, 20], dist: 260, width: 90, ms: 190, desc: 'Melesat ke depan, menebas yang dilewati, kebal saat melesat' },
+  { id: 'guard', key: '3', name: 'Perisai', icon: '🛡', mp: 10, cd: 9000,
+    ms: 2500, reduce: 0.8, desc: 'Menahan 80% damage selama 2,5 detik' },
+];
 
 export const GOBLIN_STATS = {
   maxHp: 34,
