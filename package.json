@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "test": "node tools/test-all.js",
     "sql": "node tools/combine-sql.js",
-    "map": "node tools/mapgen/forest.js",
-    "map:preview": "node tools/mapgen/preview.js web/public/assets/maps/forest.tmj maps/forest-preview.png"
+    "map": "node tools/mapgen/island.js",
+    "map:preview": "node tools/mapgen/preview.js web/public/assets/maps/island.tmj maps/island-preview.png",
+    "assets": "bash tools/pull-assets.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.2",

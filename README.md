@@ -27,12 +27,17 @@ tools/                harness tes, test-all, combine-sql
 | `npm run dev` | server lokal http://localhost:8787/benonia/ |
 | `npm test` | semua tes PGlite (wajib lulus sebelum deploy-db) |
 | `npm run build` | build ke `dist/` |
-| `npm run map` | buat ulang peta hutan dari `tools/mapgen/forest.js` |
-| `npm run map:preview` | render peta ke `maps/forest-preview.png` |
+| `npm run assets` | unduh aset Tiny Swords dari Supabase Storage (butuh `SUPABASE_SECRET_KEY`) |
+| `npm run map` | buat ulang peta pulau dari `tools/mapgen/island.js` |
+| `npm run map:preview` | render peta ke `maps/island-preview.png` (tidak di-commit) |
 
 ## Peta
 
-Peta dibuat oleh skrip (`tools/mapgen/`), bukan diedit tangan. Hasilnya JSON format Tiled (`.tmj`), jadi tetap bisa dibuka di Tiled kalau perlu. Layer: `ground`, `decor`, `low` (di bawah pemain), `high` (di atas pemain), `collide` (tak terlihat), objek `spawn`.
+Peta dibuat oleh skrip (`tools/mapgen/`), bukan diedit tangan. Hasilnya JSON format Tiled (`.tmj`), jadi tetap bisa dibuka di Tiled kalau perlu. Layer tile: `sand`, `grass`, `collide` (tak terlihat). Pohon, semak, batu, reruntuhan, buih ombak = objek di layer `objects` (jenis sesuai `web/src/catalog.js`), diurut kedalaman berdasarkan posisi kaki.
+
+## Aset berlisensi
+
+Tiny Swords (Pixel Frog) melarang redistribusi, jadi file-nya **tidak ada di repo**. Disimpan di bucket private `game-assets` (Supabase Storage) sebagai `benonia-assets-vN.zip`, diunduh `tools/pull-assets.sh` saat deploy. Ganti isi aset = upload zip versi baru lalu ubah `ASSET_PACK`.
 
 ## Aturan server (sama seperti Marantau)
 

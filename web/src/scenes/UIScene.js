@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { joystick } from '../controls.js';
+import { joystick, touchButtons } from '../controls.js';
 import { api, isConfigured } from '../net/api.js';
 import { GAME_VERSION } from '../config.js';
 
@@ -46,6 +46,21 @@ export class UIScene extends Phaser.Scene {
     };
     this.input.on('pointerup', release);
     this.input.on('pointerupoutside', release);
+
+    // ---- tombol serang (hanya perangkat sentuh) ----
+    if (this.sys.game.device.input.touch) {
+      this.atk = this.add.circle(0, 0, 38, 0xf3e3b5, 0.28).setStrokeStyle(3, 0xf3e3b5, 0.6)
+        .setInteractive({ useHandCursor: false });
+      this.atkLabel = this.add.text(0, 0, '⚔', { fontSize: '30px', color: '#ffffff' }).setOrigin(0.5);
+      this.atk.on('pointerdown', () => { touchButtons.attack = true; this.atk.setFillStyle(0xf3e3b5, 0.5); });
+      this.atk.on('pointerup', () => this.atk.setFillStyle(0xf3e3b5, 0.28));
+      this.atk.on('pointerout', () => this.atk.setFillStyle(0xf3e3b5, 0.28));
+      const place = () => {
+        const { width: w, height: h } = this.scale;
+        this.atk.setPosition(w - 70, h - 90); this.atkLabel.setPosition(w - 70, h - 90);
+      };
+      place(); this.scale.on('resize', place);
+    }
   }
 
   async pingServer() {

@@ -28,6 +28,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Ambil aset berlisensi dari Supabase Storage
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: bash tools/pull-assets.sh
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

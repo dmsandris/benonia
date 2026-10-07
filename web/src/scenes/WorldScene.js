@@ -1,45 +1,70 @@
 import * as Phaser from 'phaser';
-import { readMove } from '../controls.js';
+import { readMove, attackPressed } from '../controls.js';
+import { SPRITES, WARRIOR, TILE } from '../catalog.js';
 
-const SPEED = 80; // piksel dunia per detik (5 tile/detik)
-const DIR_FRAME = { down: 0, up: 1, left: 2, right: 3 };
+const SPEED = 230; // piksel dunia per detik (±3,6 tile/detik)
+
+// Urutan gambar: air < buih < pasir < rumput < objek (diurut berdasarkan y kaki).
+const DEPTH = { water: -40, foam: -30, sand: -20, grass: -10 };
 
 export class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
 
   create() {
-    // ---- peta ----
-    const map = this.make.tilemap({ key: 'forest' });
-    const sets = [
-      map.addTilesetImage('floor', 'ts-floor'),
-      map.addTilesetImage('water', 'ts-water'),
-      map.addTilesetImage('nature', 'ts-nature'),
-      map.addTilesetImage('ruins', 'ts-ruins'),
-    ];
-    map.createLayer('ground', sets).setDepth(0);
-    map.createLayer('decor', sets).setDepth(1);
-    map.createLayer('low', sets).setDepth(2);
-    map.createLayer('high', sets).setDepth(20); // di atas pemain (puncak pohon, atap)
-    const solid = map.createLayer('collide', sets).setVisible(false);
+    const map = this.make.tilemap({ key: 'island' });
+    const ts = map.addTilesetImage('flat', 'flat');
+    const W = map.widthInPixels, H = map.heightInPixels;
+
+    this.add.tileSprite(0, 0, W, H, 'water').setOrigin(0).setDepth(DEPTH.water);
+    map.createLayer('sand', ts).setDepth(DEPTH.sand);
+    map.createLayer('grass', ts).setDepth(DEPTH.grass);
+    const solid = map.createLayer('collide', ts).setVisible(false);
     solid.setCollisionByExclusion([-1]);
-    this.map = map;
+
+    // ---- objek dari peta ----
+    this.blockers = this.physics.add.staticGroup();
+    let spawn = { x: W / 2, y: H / 2 };
+    for (const o of map.getObjectLayer('objects').objects) {
+      if (o.type === 'spawn') { spawn = o; continue; }
+      const s = SPRITES[o.type];
+      if (!s) continue;
+      const spr = this.add.sprite(o.x, o.y, o.type, 0)
+        .setOrigin(s.anchor[0] / s.fw, s.anchor[1] / s.fh);
+      spr.setDepth(s.layer === 'foam' ? DEPTH.foam : o.y);
+      if (s.frames) {
+        spr.play({ key: `${o.type}-loop`, startFrame: Phaser.Math.Between(0, s.frames - 1) });
+        spr.anims.timeScale = Phaser.Math.FloatBetween(0.85, 1.15);
+      }
+      if (s.body) {
+        const [bw, bh] = s.body;
+        const box = this.add.zone(o.x, o.y - bh / 2, bw, bh);
+        this.blockers.add(box);
+      }
+    }
 
     // ---- pemain ----
-    const spawn = map.findObject('objects', o => o.name === 'spawn') || { x: 64, y: 64 };
-    this.shadow = this.add.image(spawn.x, spawn.y + 7, 'shadow').setDepth(9).setAlpha(0.6);
-    this.player = this.physics.add.sprite(spawn.x, spawn.y, 'knight', 0).setDepth(10);
-    // badan fisik hanya di kaki, supaya bisa "masuk" di depan pohon
-    this.player.body.setSize(10, 6).setOffset(3, 10);
-    this.player.setCollideWorldBounds(true);
-    this.facing = 'down';
-    this.physics.add.collider(this.player, solid);
-    this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    const p = this.physics.add.sprite(spawn.x, spawn.y, 'warrior-idle', 0)
+      .setOrigin(WARRIOR.anchor[0] / WARRIOR.fw, WARRIOR.anchor[1] / WARRIOR.fh);
+    const [bw, bh] = WARRIOR.body;
+    p.body.setSize(bw, bh).setOffset(WARRIOR.anchor[0] - bw / 2, WARRIOR.anchor[1] - bh);
+    p.setCollideWorldBounds(true);
+    p.play('warrior-idle');
+    this.player = p;
+    this.attacking = false;
+    this.combo = 0;
+    p.on('animationcomplete', anim => {
+      if (anim.key.startsWith('warrior-attack')) { this.attacking = false; p.play('warrior-idle'); }
+    });
+
+    this.physics.add.collider(p, solid);
+    this.physics.add.collider(p, this.blockers);
+    this.physics.world.setBounds(0, 0, W, H);
 
     // ---- kamera ----
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-    cam.startFollow(this.player, true, 0.2, 0.2);
-    cam.setRoundPixels(true);
+    cam.setBounds(0, 0, W, H);
+    cam.startFollow(p, true, 0.15, 0.15);
+    cam.setBackgroundColor('#47ABA9');
     this.fitZoom();
     this.scale.on('resize', () => this.fitZoom());
 
@@ -47,33 +72,36 @@ export class WorldScene extends Phaser.Scene {
     const K = Phaser.Input.Keyboard.KeyCodes;
     this.keys = this.input.keyboard?.addKeys({
       up: K.UP, down: K.DOWN, left: K.LEFT, right: K.RIGHT, w: K.W, a: K.A, s: K.S, d: K.D,
+      space: K.SPACE, j: K.J,
     });
   }
 
-  // Zoom bulat (2x, 3x, 4x) supaya piksel tetap tajam; target ±20 tile terlihat.
+  // Target ±16 x 10 tile terlihat. Zoom dibulatkan ke bawah ke kelipatan 0,25 supaya piksel rapi.
   fitZoom() {
     const { width: w, height: h } = this.scale;
-    const z = Math.max(2, Math.min(4, Math.floor(Math.min(w / (20 * 16), h / (12 * 16))) || 2));
+    let z = Math.min(w / (16 * TILE), h / (10 * TILE));
+    z = Phaser.Math.Clamp(Math.floor(z * 4) / 4, 0.5, 2);
     this.cameras.main.setZoom(z);
   }
 
   update() {
-    const { x, y } = readMove(this.keys);
     const p = this.player;
-    p.setVelocity(x * SPEED, y * SPEED);
-
-    if (x !== 0 || y !== 0) {
-      // arah hadap mengikuti sumbu yang dominan
-      this.facing = Math.abs(x) > Math.abs(y) ? (x < 0 ? 'left' : 'right') : (y < 0 ? 'up' : 'down');
-      p.anims.play(`knight-walk-${this.facing}`, true);
-    } else {
-      p.anims.stop();
-      p.setFrame(DIR_FRAME[this.facing]);
+    if (attackPressed(this.keys) && !this.attacking) {
+      this.attacking = true;
+      this.combo = (this.combo + 1) % 2;
+      p.setVelocity(0, 0);
+      p.play(this.combo ? 'warrior-attack1' : 'warrior-attack2');
     }
-    this.shadow.setPosition(p.x, p.y + 7);
 
-    this.registry.set('playerTile', {
-      x: Math.floor(p.x / 16), y: Math.floor(p.y / 16),
-    });
+    if (this.attacking) { p.setVelocity(0, 0); }
+    else {
+      const { x, y } = readMove(this.keys);
+      p.setVelocity(x * SPEED, y * SPEED);
+      if (x !== 0) p.setFlipX(x < 0);
+      p.play(x !== 0 || y !== 0 ? 'warrior-run' : 'warrior-idle', true);
+    }
+    p.setDepth(p.y);
+
+    this.registry.set('playerTile', { x: Math.floor(p.x / TILE), y: Math.floor(p.y / TILE) });
   }
 }

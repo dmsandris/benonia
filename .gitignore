@@ -3,3 +3,7 @@ dist/
 all.sql
 .DS_Store
 *.log
+
+# Aset berlisensi (Tiny Swords) — diambil dari Supabase Storage saat build, jangan di-commit
+web/public/assets/ts/
+maps/*-preview.png
