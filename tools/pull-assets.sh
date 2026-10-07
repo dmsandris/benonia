@@ -13,6 +13,13 @@ SUPABASE_URL="${SUPABASE_URL:-https://btwjjjhrdaffhcuperyi.supabase.co}"
 ASSET_BUCKET="${ASSET_BUCKET:-game-assets}"
 ASSET_PACK="${ASSET_PACK:-benonia-assets-v1.zip}"
 : "${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY belum diisi}"
+# cek jenis kunci dari awalannya saja (isi kunci tidak pernah dicetak)
+case "$SUPABASE_SECRET_KEY" in
+  sb_secret_*) KIND="secret key (benar)" ;;
+  sb_publishable_*) KIND="PUBLISHABLE key (salah: tidak bisa membaca bucket private)" ;;
+  eyJ*) KIND="key lama berbentuk JWT (anon atau service_role)" ;;
+  *) KIND="bentuk tidak dikenal" ;;
+esac
 
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d)"
@@ -33,7 +40,7 @@ if [ "$code" != "200" ]; then
   list="$(curl -sS -X POST -H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
     -H 'Content-Type: application/json' -d '{"prefix":"","limit":20}' \
     "$SUPABASE_URL/storage/v1/object/list/$ASSET_BUCKET" | head -c 400 | tr -d '\n')"
-  note "Gagal unduh $ASSET_BUCKET/$ASSET_PACK. Coba1 [$first] Coba2 [$code: $body] Isi bucket: $list"
+  note "Jenis kunci: $KIND. Gagal unduh $ASSET_BUCKET/$ASSET_PACK. Coba1 [$first] Coba2 [$code: $body] Isi bucket: $list"
   exit 1
 fi
 rm -rf web/public/assets/ts
