@@ -231,6 +231,7 @@ begin
   select * into e from game.enemy_catalog where enemy_id = eid;
   if not found then raise exception 'Musuh tidak dikenal'; end if;
   if spawn !~ '^[a-z]+:[0-9]+$' then raise exception 'Titik muncul tidak sah'; end if;
+  if split_part(spawn, ':', 1) <> eid then raise exception 'Titik muncul bukan milik musuh ini'; end if;
 
   select * into s from game.player_state where player_id = pid for update;
   if not found then raise exception 'Karakter belum dibuat'; end if;

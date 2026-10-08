@@ -106,7 +106,7 @@ export class UIScene extends Phaser.Scene {
     const st = this.registry.get('stats') || {};
     const rows = pr.inventory.length
       ? pr.inventory.map(i => `<li><span class="ic">${i.icon}</span><span class="nm">${i.name}<small>${i.info}</small></span><b>×${i.qty}</b></li>`).join('')
-      : '<li class="empty">Tas masih kosong. Kalahkan goblin untuk mendapat barang.</li>';
+      : '<li class="empty">Tas masih kosong. Kalahkan musuh untuk mendapat barang.</li>';
     this.bag.innerHTML = `
       <style>
         .bag{position:fixed;right:8px;top:62px;width:min(300px,calc(100vw - 16px));max-height:70vh;overflow:auto;
@@ -123,7 +123,7 @@ export class UIScene extends Phaser.Scene {
         .bag button{font:bold 13px Georgia,serif;padding:7px 12px;border:2px solid #2a1408;border-radius:6px;background:#e9d3a2;cursor:pointer}
       </style>
       <h3>${pr.username ?? ''} <span>Lv ${pr.level ?? 1}</span></h3>
-      <div class="sub">${st.kills ?? pr.kills ?? 0} goblin dikalahkan</div>
+      <div class="sub">${st.kills ?? pr.kills ?? 0} musuh dikalahkan</div>
       <ul>${rows}</ul>
       <div class="foot"><span>🪙 ${pr.zeny ?? 0} Zeny</span><button type="button" class="out">Keluar akun</button></div>`;
     this.bag.querySelector('.out').addEventListener('click', async () => {
@@ -139,11 +139,12 @@ export class UIScene extends Phaser.Scene {
     if (this.touch) {
       const ax = w - 74, ay = h - 96;
       atk.c.setPosition(ax, ay);
-      // skill melingkar di kiri-atas tombol serang
-      const angles = [180, 225, 270];
+      // skill dalam dua lingkar di kiri-atas tombol serang: 1-3 dalam, 4-6 luar
+      const ring = [[86, 180], [86, 225], [86, 270], [156, 192], [156, 230], [156, 266]];
       sk.forEach((b, i) => {
-        const a = Phaser.Math.DegToRad(angles[i]);
-        b.c.setPosition(ax + Math.cos(a) * 86, ay + Math.sin(a) * 86);
+        const [r, deg] = ring[i];
+        const a = Phaser.Math.DegToRad(deg);
+        b.c.setPosition(ax + Math.cos(a) * r, ay + Math.sin(a) * r);
       });
     } else {
       const gap = 78, total = gap * this.buttons.length;
@@ -188,7 +189,7 @@ export class UIScene extends Phaser.Scene {
     const fps = Math.round(this.game.loop.actualFps);
     const st = this.registry.get('stats') || { hp: 0, maxHp: 1, mp: 0, maxMp: 1, kills: 0 };
     this.drawCooldowns();
-    this.info.setText(`${st.username ?? ''}  Lv ${st.level ?? 1}  ·  🪙 ${st.zeny ?? 0}  ·  goblin ${st.kills ?? 0}\nBenonia ${GAME_VERSION} · ${fps} fps · tile ${t.x},${t.y} · ${this.server}`);
+    this.info.setText(`${st.username ?? ''}  Lv ${st.level ?? 1}  ·  🪙 ${st.zeny ?? 0}  ·  ⚔ ${st.kills ?? 0}\nBenonia ${GAME_VERSION} · ${fps} fps · tile ${t.x},${t.y} · ${this.server}`);
     const x = 8, y = this.info.y + this.info.height + 6, w = 180, h = 14, k = Math.max(0, st.hp / st.maxHp);
     this.hpBar.clear().fillStyle(0x2a1408, 0.85).fillRoundedRect(x, y, w + 4, h + 4, 4)
       .fillStyle(k > 0.3 ? 0xd94b3d : 0xff2a1a, 1).fillRoundedRect(x + 2, y + 2, w * k, h, 3);

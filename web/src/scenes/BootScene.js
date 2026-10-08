@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { SPRITES, WARRIOR, FLAT, WATER_TILE, GOBLIN, DEATH_FX } from '../catalog.js';
+import { UNIT_SHEETS } from '../unitsheets.js';
 
 // Memuat semua aset dari katalog lalu masuk ke dunia.
 export class BootScene extends Phaser.Scene {
@@ -28,6 +29,13 @@ export class BootScene extends Phaser.Scene {
     for (const [name, a] of Object.entries(WARRIOR.anims)) {
       this.load.spritesheet(`warrior-${name}`, `assets/${a.file}`, { frameWidth: WARRIOR.fw, frameHeight: WARRIOR.fh });
     }
+    // knight (pemain hadap atas/bawah + skill), babi & ular goblin: strip hasil tools/sprites/build_units.py
+    for (const [unit, m] of Object.entries(UNIT_SHEETS)) {
+      for (const [name, a] of Object.entries(m.anims)) {
+        this.load.spritesheet(`${unit}-${name}`, `assets/${a.file}`, { frameWidth: m.fw, frameHeight: m.fh });
+      }
+      for (const [name, e] of Object.entries(m.extra)) this.load.image(`${unit}-${name}`, `assets/${e.file}`);
+    }
   }
 
   create() {
@@ -50,6 +58,20 @@ export class BootScene extends Phaser.Scene {
         key: `goblin-${name}`, frameRate: a.fps, repeat: a.repeat,
         frames: this.anims.generateFrameNumbers('goblin', { start, end: start + a.frames - 1 }),
       });
+    }
+    for (const [unit, m] of Object.entries(UNIT_SHEETS)) {
+      for (const [name, a] of Object.entries(m.anims)) {
+        const key = `${unit}-${name}`;
+        this.anims.create({
+          key, frameRate: a.fps, repeat: a.repeat,
+          frames: this.anims.generateFrameNumbers(key, { start: 0, end: a.frames - 1 }),
+        });
+      }
+    }
+    // knight diam menghadap atas/bawah = frame pertama jalan
+    for (const d of ['Up', 'Down']) {
+      this.anims.create({ key: `knight-idle${d}`, frameRate: 1, repeat: -1,
+        frames: this.anims.generateFrameNumbers(`knight-walk${d}`, { frames: [0] }) });
     }
     this.anims.create({
       key: 'death-fx', frameRate: 12, repeat: 0,

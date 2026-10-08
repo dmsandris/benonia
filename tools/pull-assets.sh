@@ -7,11 +7,11 @@
 # Opsional:
 #   SUPABASE_URL         default: URL project Benonia
 #   ASSET_BUCKET         default: game-assets
-#   ASSET_PACK           default: benonia-assets-v2.zip (naikkan versi tiap ganti isi)
+#   ASSET_PACK           default: benonia-assets-v3.zip (naikkan versi tiap ganti isi)
 set -euo pipefail
 SUPABASE_URL="${SUPABASE_URL:-https://btwjjjhrdaffhcuperyi.supabase.co}"
 ASSET_BUCKET="${ASSET_BUCKET:-game-assets}"
-ASSET_PACK="${ASSET_PACK:-benonia-assets-v2.zip}"
+ASSET_PACK="${ASSET_PACK:-benonia-assets-v3.zip}"
 : "${SUPABASE_SECRET_KEY:?SUPABASE_SECRET_KEY belum diisi}"
 # cek jenis kunci dari awalannya saja (isi kunci tidak pernah dicetak)
 case "$SUPABASE_SECRET_KEY" in

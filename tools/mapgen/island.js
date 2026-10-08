@@ -117,6 +117,9 @@ for (let y = plaza.y - 4; y <= plaza.y + 1; y++) for (let x = plaza.x - 5; x <= 
 objects.push({ type: 'castle', ...at(plaza.x, plaza.y - 2, 0, 0) });
 objects.push({ type: 'tower', ...at(plaza.x - 4, plaza.y - 1, 0, 0) });
 objects.push({ type: 'house', ...at(plaza.x + 4, plaza.y, 0, 0) });
+// tandai tapak reruntuhan supaya tidak ada musuh muncul di atasnya
+for (let dx = -3; dx <= 3; dx++) for (let dy = -3; dy <= -1; dy++) used.set(plaza.x + dx, plaza.y + dy, 2);
+for (const [cx, cy] of [[plaza.x - 4, plaza.y - 1], [plaza.x + 4, plaza.y]]) for (let dx = -1; dx <= 1; dx++) used.set(cx + dx, cy, 2);
 objects.push({ type: 'signSkull', ...at(plaza.x - 2, plaza.y + 2, 10, 0) });
 objects.push({ type: 'signArrow', ...at(spawn.x + 2, spawn.y - 2, 0, 0) });
 
@@ -180,21 +183,35 @@ for (let i = 0; i < 60; i++) {
   }
 }
 
-// titik muncul goblin: di rumput, jauh dari titik muncul pemain, saling berjauhan
+// titik muncul musuh (semua saling berjauhan, jauh dari titik muncul pemain):
+//  babi hutan  : padang terbuka di timur
+//  ular        : dekat air (pantai/kolam)
+//  goblin      : padang terbuka lainnya
 {
-  const cands = [];
-  land.each((x, y) => {
-    if (!grass.get(x, y) || used.get(x, y) || nearWater(x, y, 3) || Math.hypot(x - spawn.x, y - spawn.y) <= 7) return;
-    // padang terbuka: tidak ada pohon/semak/batu dalam radius 1 sel
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (used.get(x + dx, y + dy) && used.get(x + dx, y + dy) !== 3) return;
-    cands.push([x, y]);
-  });
-  const picked = [];
-  for (let i = 0; i < 400 && picked.length < 8; i++) {
-    const [x, y] = R.pick(cands);
-    if (picked.every(([a, b]) => Math.hypot(a - x, b - y) >= 5)) picked.push([x, y]);
-  }
-  for (const [x, y] of picked) objects.push({ type: 'goblin', ...at(x, y, 0, 0) });
+  const taken = [];
+  const far = (x, y, d) => taken.every(([a, b]) => Math.hypot(a - x, b - y) >= d);
+  const openAround = (x, y) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const u = used.get(x + dx, y + dy); if (u && u !== 3) return false;
+    }
+    return true;
+  };
+  const place = (type, n, ok, gap = 5) => {
+    const c = [];
+    land.each((x, y) => { if (ok(x, y) && openAround(x, y) && Math.hypot(x - spawn.x, y - spawn.y) > 7) c.push([x, y]); });
+    let got = 0;
+    for (let i = 0; i < 800 && got < n && c.length; i++) {
+      const [x, y] = R.pick(c);
+      if (!far(x, y, gap)) continue;
+      taken.push([x, y]); got++;
+      objects.push({ type, ...at(x, y, 0, 0) });
+    }
+    console.log(`${type}: ${c.length} kandidat, ${got} dipasang`);
+  };
+  const meadow = (x, y) => grass.get(x, y) && (!used.get(x, y) || used.get(x, y) === 3);
+  place('hog', 3, (x, y) => meadow(x, y) && x > W * 0.45 && !nearWater(x, y, 2), 5);
+  place('snake', 3, (x, y) => land.get(x, y) && !used.get(x, y) && !path.get(x, y) && nearWater(x, y, 3) && !nearWater(x, y, 0), 5);
+  place('goblin', 6, (x, y) => meadow(x, y) && !nearWater(x, y, 3), 4);
 }
 
 objects.push({ name: 'spawn', type: 'spawn', x: spawn.x * TILE + TILE / 2, y: spawn.y * TILE + TILE / 2 });

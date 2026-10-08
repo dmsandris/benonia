@@ -29,6 +29,7 @@ tools/                harness tes, test-all, combine-sql
 | `npm run build` | build ke `dist/` |
 | `npm run assets` | unduh aset Tiny Swords dari Supabase Storage (butuh `SUPABASE_SECRET_KEY`) |
 | `npm run map` | buat ulang peta pulau dari `tools/mapgen/island.js` |
+| `python3 -I tools/sprites/build_units.py <hog.jpg> <snake.jpg> <knight.jpg> web/public/assets/ts web/src/unitsheets.js` | potong sheet sprite buatan (latar putih) jadi strip animasi |
 | `npm run map:preview` | render peta ke `maps/island-preview.png` (tidak di-commit) |
 
 ## Peta

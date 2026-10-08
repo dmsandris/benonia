@@ -1,13 +1,22 @@
 import * as Phaser from 'phaser';
 import { readMove, attackPressed, touchButtons, skillPressed } from '../controls.js';
 import { SPRITES, WARRIOR, TILE } from '../catalog.js';
-import { PLAYER, SKILLS, rollDamage, damageText, flash } from '../combat.js';
-import { Goblin } from '../entities/Goblin.js';
+import { PLAYER, SKILLS, AIM_RANGE, rollDamage, damageText, flash } from '../combat.js';
+import { ENEMY_TYPES } from '../entities/Enemy.js';
+import { UNIT_SHEETS } from '../unitsheets.js';
 import { api } from '../net/api.js';
 
 const SAVE_EVERY = 8000; // ms
 
 const SPEED = 230; // piksel dunia per detik (±3,6 tile/detik)
+
+// Dua keluarga gambar pemain dengan ukuran frame & titik kaki berbeda:
+// Warrior Tiny Swords (samping) dan Knight baru (hadap atas/bawah + skill lempar/api).
+const KN = UNIT_SHEETS.knight;
+const FAMILY = {
+  warrior: { fw: WARRIOR.fw, fh: WARRIOR.fh, ax: WARRIOR.anchor[0], ay: WARRIOR.anchor[1] },
+  knight: { fw: KN.fw, fh: KN.fh, ax: KN.anchor[0], ay: KN.anchor[1] },
+};
 
 // Urutan gambar: air < buih < pasir < rumput < objek (diurut berdasarkan y kaki).
 const DEPTH = { water: -40, foam: -30, sand: -20, grass: -10 };
@@ -28,16 +37,23 @@ export class WorldScene extends Phaser.Scene {
     map.createLayer('sand', ts).setDepth(DEPTH.sand);
     map.createLayer('grass', ts).setDepth(DEPTH.grass);
     const solid = map.createLayer('collide', ts).setVisible(false);
+    this.solid = solid;
     solid.setCollisionByExclusion([-1]);
 
     // ---- objek & musuh dari peta ----
     this.blockers = this.physics.add.staticGroup();
     this.enemies = this.physics.add.group({ runChildUpdate: false });
-    let spawn = { x: W / 2, y: H / 2 }, gi = 0;
+    let spawn = { x: W / 2, y: H / 2 };
+    const counter = {};
     for (const o of map.getObjectLayer('objects').objects) {
       if (o.type === 'spawn') { spawn = o; continue; }
       // id titik muncul stabil (urutan di peta) dipakai server untuk cek respawn
-      if (o.type === 'goblin') { this.enemies.add(new Goblin(this, o.x, o.y, `goblin:${gi++}`)); continue; }
+      const Kind = ENEMY_TYPES[o.type];
+      if (Kind) {
+        counter[o.type] = (counter[o.type] ?? -1) + 1;
+        this.enemies.add(new Kind(this, o.x, o.y, `${o.type}:${counter[o.type]}`));
+        continue;
+      }
       const s = SPRITES[o.type];
       if (!s) continue;
       const spr = this.add.sprite(o.x, o.y, o.type, 0)
@@ -57,17 +73,21 @@ export class WorldScene extends Phaser.Scene {
     // ---- pemain ----
     const pr = this.profile;
     const start = pr.x != null ? { x: pr.x, y: pr.y } : spawn;
-    const p = this.physics.add.sprite(start.x, start.y, 'warrior-idle', 0)
-      .setOrigin(WARRIOR.anchor[0] / WARRIOR.fw, WARRIOR.anchor[1] / WARRIOR.fh);
+    const p = this.physics.add.sprite(start.x, start.y, 'warrior-idle', 0);
+    this.player = p;
     const [bw, bh] = WARRIOR.body;
-    p.body.setSize(bw, bh).setOffset(WARRIOR.anchor[0] - bw / 2, WARRIOR.anchor[1] - bh);
+    p.body.setSize(bw, bh);
     p.setCollideWorldBounds(true);
-    p.play('warrior-idle');
+    this.face = 'side';            // side | up | down
+    this.pfam = null;
+    this.playP('warrior-idle');
     p.hp = Math.max(1, pr.hp);
     p.mp = pr.mp;
     p.dead = false;
-    this.player = p;
     this.attacking = false;
+    this.shots = [];               // proyektil pemain (perisai, pedang)
+    this.enemyShots = [];          // proyektil musuh (ludah racun)
+    this.shieldOut = false;
     this.combo = 0;
     this.hurtUntil = 0;
     this.lastSave = { t: 0, x: -1, y: -1, hp: -1 };
@@ -89,7 +109,7 @@ export class WorldScene extends Phaser.Scene {
     p.on('animationcomplete', anim => {
       if (anim.key.startsWith('warrior-attack') && !this.dashing) {
         if (this.skillAnim === 'whirl1') return; // tebasan pertama Putaran; lanjut ke kedua
-        this.attacking = false; this.skillAnim = null; p.play('warrior-idle');
+        this.attacking = false; this.skillAnim = null; this.playP('warrior-idle');
       }
     });
 
@@ -114,10 +134,59 @@ export class WorldScene extends Phaser.Scene {
     });
     for (const k of ['SPACE', 'J']) this.input.keyboard?.on(`keydown-${k}`, () => { touchButtons.attack = true; });
     for (const sk of SKILLS) {
-      const name = { 1: 'ONE', 2: 'TWO', 3: 'THREE' }[sk.key];
+      const name = { 1: 'ONE', 2: 'TWO', 3: 'THREE', 4: 'FOUR', 5: 'FIVE', 6: 'SIX' }[sk.key];
       this.input.keyboard?.on(`keydown-${name}`, () => { touchButtons.skill = sk.id; });
     }
   }
+
+  // Main animasi pemain; ganti titik kaki & badan fisik bila keluarga gambar berubah.
+  playP(key, ignoreIfPlaying = true) {
+    const p = this.player;
+    const fam = key.startsWith('knight-') ? FAMILY.knight : FAMILY.warrior;
+    p.play(key, ignoreIfPlaying);
+    if (this.pfam !== fam) {
+      this.pfam = fam;
+      p.setOrigin(fam.ax / fam.fw, fam.ay / fam.fh);
+      const [bw, bh] = WARRIOR.body;
+      p.body.setOffset(fam.ax - bw / 2, fam.ay - bh);
+    }
+  }
+
+  // Arah bidik: ke musuh terdekat (dalam AIM_RANGE), kalau tidak ada ke arah hadap.
+  aimDir() {
+    const p = this.player, t = this.nearestEnemy(AIM_RANGE);
+    if (t) {
+      const c = t.center, a = Phaser.Math.Angle.Between(p.x, p.y - 40, c.x, c.y);
+      return { x: Math.cos(a), y: Math.sin(a), target: t };
+    }
+    if (this.face === 'up') return { x: 0, y: -1 };
+    if (this.face === 'down') return { x: 0, y: 1 };
+    return { x: p.flipX ? -1 : 1, y: 0 };
+  }
+
+  // Animasi lempar/api hanya menghadap samping: hadapkan ke sisi arah bidik.
+  faceSide(dir) {
+    this.face = 'side';
+    if (Math.abs(dir.x) > 0.05) this.player.setFlipX(dir.x < 0);
+  }
+
+  isWalkable(x, y) {
+    const W = this.physics.world.bounds;
+    if (x < 64 || y < 64 || x > W.width - 64 || y > W.height - 64) return false;
+    if (this.solid.getTileAtWorldXY(x, y)) return false;
+    return !this.blockers.getChildren().some(z => Math.abs(z.x - x) < z.width / 2 + 24 && Math.abs(z.y - y) < z.height / 2 + 20);
+  }
+
+  findSpotNear(x, y, rMin, rMax) {
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2, r = Phaser.Math.Between(rMin, rMax);
+      const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r * 0.75;
+      if (this.isWalkable(px, py)) return { x: px, y: py };
+    }
+    return null;
+  }
+
+  ringAt(x, y, r, color) { this.ring(x, y, r, color); }
 
   // Target ±16 x 10 tile terlihat. Zoom dibulatkan ke bawah ke kelipatan 0,25 supaya piksel rapi.
   fitZoom() {
@@ -143,10 +212,11 @@ export class WorldScene extends Phaser.Scene {
     // otomatis menghadap musuh terdekat supaya tebasan tidak meleset
     const t = this.nearestEnemy(PLAYER.autoAim);
     if (t && Math.abs(t.x - p.x) > 6) p.setFlipX(t.x < p.x);
+    this.face = 'side';
     this.attacking = true;
     this.combo = (this.combo + 1) % 2;
     p.setVelocity(0, 0);
-    p.play(this.combo ? 'warrior-attack1' : 'warrior-attack2');
+    this.playP(this.combo ? 'warrior-attack1' : 'warrior-attack2');
   }
 
   // Kena: musuh di kotak depan pemain, ATAU yang sudah menempel dari arah mana pun.
@@ -164,17 +234,17 @@ export class WorldScene extends Phaser.Scene {
   get maxMp() { return this.profile.maxMp; }
 
   // +1 damage per level di atas 1
-  hitEnemy(g, range, critChance = PLAYER.critChance) {
+  hitEnemy(g, range, critChance = PLAYER.critChance, fromX = this.player.x) {
     const bonus = this.profile.level - 1;
     const { amount, crit } = rollDamage([range[0] + bonus, range[1] + bonus], critChance, PLAYER.critMul);
-    if (g.hit(amount, crit, this.player.x)) this.claimKill(g);
+    if (g.hit(amount, crit, fromX)) this.claimKill(g);
   }
 
   // ---------- server: kill, simpan, tumbang ----------
   async claimKill(g) {
     const x = g.x, y = g.y;
     try {
-      const r = await api('api_claimKill', g.spawnId, 'goblin');
+      const r = await api('api_claimKill', g.spawnId, g.kind);
       if (!r.ok) return; // ditolak server (terlalu cepat / belum respawn): tanpa hadiah
       this.profile = r.state;
       this.registry.set('profile', r.state);
@@ -221,6 +291,7 @@ export class WorldScene extends Phaser.Scene {
   castSkill(id) {
     const p = this.player, sk = SKILLS.find(k => k.id === id), now = this.time.now;
     if (!sk || p.dead || this.dashing || this.skillAnim) return; // skill boleh memotong tebasan biasa
+    if ((id === 'shield' || id === 'guard') && this.shieldOut) return this.say('Perisai sedang terbang');
     if (now < this.skillReady[id]) return this.say('Belum siap');
     if (p.mp < sk.mp) return this.say('MP kurang');
     p.mp -= sk.mp;
@@ -242,8 +313,9 @@ export class WorldScene extends Phaser.Scene {
     this.attacking = true;
     this.skillAnim = 'whirl1';
     p.setVelocity(0, 0);
-    p.play('warrior-attack1');
-    this.time.delayedCall(140, () => { this.skillAnim = 'whirl2'; p.setFlipX(!p.flipX); p.play('warrior-attack2'); });
+    this.face = 'side';
+    this.playP('warrior-attack1');
+    this.time.delayedCall(140, () => { this.skillAnim = 'whirl2'; p.setFlipX(!p.flipX); this.playP('warrior-attack2'); });
     this.ring(p.x, p.y - 30, sk.radius, 0xe8f6ff);
     this.time.delayedCall(120, () => {
       const hits = this.enemies.getChildren().filter(g => g.alive &&
@@ -261,11 +333,12 @@ export class WorldScene extends Phaser.Scene {
     if (!x && !y) x = p.flipX ? -1 : 1;
     const len = Math.hypot(x, y); x /= len; y /= len;
     if (x) p.setFlipX(x < 0);
+    this.face = 'side';
     const speed = sk.dist / (sk.ms / 1000);
     this.attacking = true;
     this.dashing = { until: this.time.now + sk.ms * 2.5, sx: p.x, sy: p.y, hit: new Set(), sk, vx: x * speed, vy: y * speed };
     this.hurtUntil = Math.max(this.hurtUntil, this.time.now + sk.ms * 2.5 + 100);
-    p.play('warrior-attack2');
+    this.playP('warrior-attack2');
     p.setVelocity(this.dashing.vx, this.dashing.vy);
   }
 
@@ -284,7 +357,7 @@ export class WorldScene extends Phaser.Scene {
     const moved = Phaser.Math.Distance.Between(d.sx, d.sy, p.x, p.y);
     if (moved >= d.sk.dist || time > d.until) {
       this.dashing = null; this.attacking = false;
-      p.setVelocity(0, 0); p.play('warrior-idle');
+      p.setVelocity(0, 0); this.playP('warrior-idle');
       if (d.hit.size) this.cameras.main.shake(90, 0.006);
     }
   }
@@ -292,8 +365,163 @@ export class WorldScene extends Phaser.Scene {
   // 3. Perisai: tahan 80% damage, gerak melambat.
   skill_guard(sk) {
     this.guardUntil = this.time.now + sk.ms;
-    this.player.play('warrior-guard');
+    this.face = 'side';
+    this.playP('warrior-guard');
     this.say('Bertahan!');
+  }
+
+  // Animasi skill knight: callback di frame tertentu, selesai -> lepas kendali (atau ditahan sampai holdMs).
+  knightCast(key, atFrame, fn, holdMs = 0) {
+    const p = this.player;
+    this.attacking = true;
+    this.skillAnim = key;
+    p.setVelocity(0, 0);
+    this.playP(key, false);
+    let done = false;
+    const onUpd = (anim, frame) => {
+      if (anim.key === key && !done && frame.index - 1 >= atFrame) { done = true; fn(); }
+    };
+    p.on('animationupdate', onUpd);
+    const release = () => {
+      p.off('animationupdate', onUpd);
+      if (!done) { done = true; fn(); }
+      if (this.skillAnim !== key) return;
+      this.attacking = false; this.skillAnim = null;
+    };
+    if (holdMs) this.time.delayedCall(holdMs, release);
+    else {
+      const onDone = anim => { if (anim.key === key) { p.off('animationcomplete', onDone); release(); } };
+      p.on('animationcomplete', onDone);
+    }
+  }
+
+  // 4. Lempar Perisai: bumerang berputar, kena musuh saat pergi dan saat pulang.
+  skill_shield(sk) {
+    const dir = this.aimDir();
+    this.faceSide(dir);
+    this.shieldOut = true;
+    this.knightCast('knight-throwShield', 3, () => {
+      const p = this.player;
+      const img = this.add.image(p.x + dir.x * 30, p.y - 45, 'knight-shieldSpin').setDepth(p.y + 50);
+      this.shots.push({
+        kind: 'shield', img, sk, dir, phase: 'out', traveled: 0, hit: new Set(),
+      });
+    });
+  }
+
+  // 5. Lempar Pedang: lurus, menembus.
+  skill_sword(sk) {
+    const dir = this.aimDir();
+    this.faceSide(dir);
+    this.knightCast('knight-throwSword', 3, () => {
+      const p = this.player;
+      const img = this.add.image(p.x + dir.x * 34, p.y - 48, 'knight-swordFly')
+        .setRotation(Math.atan2(dir.y, dir.x)).setDepth(p.y + 50);
+      this.shots.push({ kind: 'sword', img, sk, dir, traveled: 0, hit: new Set() });
+      this.swordOut = true;
+    });
+  }
+
+  // 6. Napas Api: kerucut di depan, 3 kali bakar.
+  skill_fire(sk) {
+    const dir = this.aimDir();
+    this.faceSide(dir);
+    const side = this.player.flipX ? -1 : 1;
+    this.knightCast('knight-fire', 0, () => {}, sk.ms);
+    for (const t of sk.ticks) {
+      this.time.delayedCall(t, () => {
+        const p = this.player;
+        if (p.dead) return;
+        const mouth = { x: p.x + side * 22, y: p.y - 58 };
+        let n = 0;
+        for (const g of this.enemies.getChildren()) {
+          if (!g.alive || g.state === 'hidden') continue;
+          const c = g.center, dx = c.x - mouth.x, dy = c.y - mouth.y;
+          const d = Math.hypot(dx, dy);
+          const ang = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(dy, dx) - (side > 0 ? 0 : Math.PI)));
+          if (d < sk.length && (ang < Phaser.Math.DegToRad(sk.angle) || d < 50)) { this.hitEnemy(g, sk.dmg, 0.05, p.x); n++; }
+        }
+        if (n) this.cameras.main.shake(50, 0.003);
+      });
+    }
+  }
+
+  updateShots(delta) {
+    const dt = delta / 1000, p = this.player;
+    for (const s of this.shots) {
+      const { img, sk } = s;
+      if (s.kind === 'shield') {
+        img.rotation += dt * 18;
+        if (s.phase === 'out') {
+          const step = sk.speed * dt;
+          img.x += s.dir.x * step; img.y += s.dir.y * step; s.traveled += step;
+          if (s.traveled >= sk.range) { s.phase = 'back'; s.hit = new Set(); }
+        } else {
+          const tx = p.x, ty = p.y - 45, a = Math.atan2(ty - img.y, tx - img.x), step = sk.back * dt;
+          img.x += Math.cos(a) * step; img.y += Math.sin(a) * step;
+          if (Math.hypot(tx - img.x, ty - img.y) < 26 || p.dead) { s.done = true; this.shieldOut = false; }
+        }
+      } else {
+        const step = sk.speed * dt;
+        img.x += s.dir.x * step; img.y += s.dir.y * step; s.traveled += step;
+        if (s.traveled >= sk.range) s.done = true;
+        else if (s.traveled > sk.range - 120) img.setAlpha((sk.range - s.traveled) / 120);
+      }
+      img.setDepth(img.y + 50);
+      for (const g of this.enemies.getChildren()) {
+        if (!g.alive || g.state === 'hidden' || s.hit.has(g)) continue;
+        const c = g.center;
+        if (Math.hypot(c.x - img.x, c.y - img.y) < sk.radius) { s.hit.add(g); this.hitEnemy(g, sk.dmg, PLAYER.critChance, img.x); }
+      }
+    }
+    for (const s of this.shots.filter(s => s.done)) s.img.destroy();
+    this.shots = this.shots.filter(s => !s.done);
+    this.swordOut = this.shots.some(s => s.kind === 'sword');
+  }
+
+  // ---------- proyektil musuh ----------
+  spawnEnemyShot({ tex, from, to, speed, life, dmg, poison, radius }) {
+    const a = Math.atan2(to.y - from.y, to.x - from.x);
+    const img = this.add.image(from.x, from.y, tex).setDepth(from.y + 60).setScale(0.6).setFlipX(Math.cos(a) < 0);
+    this.tweens.add({ targets: img, scale: 1, duration: 250 });
+    this.enemyShots.push({ img, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, until: this.time.now + life, dmg, poison, radius });
+  }
+
+  updateEnemyShots(time, delta) {
+    const dt = delta / 1000, p = this.player;
+    for (const s of this.enemyShots) {
+      s.img.x += s.vx * dt; s.img.y += s.vy * dt; s.img.setDepth(s.img.y + 60);
+      if (time > s.until - 300) s.img.setAlpha(Math.max(0, (s.until - time) / 300));
+      if (!p.dead && Math.hypot(p.x - s.img.x, p.y - 40 - s.img.y) < s.radius) {
+        this.damagePlayer(rollDamage(s.dmg).amount, s.img.x);
+        if (s.poison) this.poisonPlayer(s.poison);
+        s.done = true;
+      }
+      if (time > s.until) s.done = true;
+    }
+    for (const s of this.enemyShots.filter(s => s.done)) s.img.destroy();
+    this.enemyShots = this.enemyShots.filter(s => !s.done);
+  }
+
+  // Racun: damage kecil berkala, tidak terhalang jeda kebal. Racun baru mengganti yang lama.
+  poisonPlayer({ ticks, dmg, every }) {
+    this.poisonTimer?.remove();
+    const p = this.player;
+    p.setTint(0x9dff7a);
+    let left = ticks;
+    this.poisonTimer = this.time.addEvent({
+      delay: every, repeat: ticks - 1,
+      callback: () => {
+        left--;
+        if (p.dead) return;
+        const amount = this.time.now < this.guardUntil ? 1 : dmg;
+        p.hp = Math.max(0, p.hp - amount);
+        damageText(this, p.x + 18, p.y - 80, amount, { color: '#9dff7a' });
+        this.pushStats();
+        if (p.hp <= 0) this.killPlayer();
+        if (left <= 0) p.clearTint();
+      },
+    });
   }
 
   ring(x, y, r, color) {
@@ -329,7 +557,8 @@ export class WorldScene extends Phaser.Scene {
 
   killPlayer() {
     const p = this.player;
-    p.dead = true; this.attacking = false;
+    p.dead = true; this.attacking = false; this.skillAnim = null;
+    this.poisonTimer?.remove(); p.clearTint();
     p.setVelocity(0, 0).setVisible(false);
     p.body.enable = false;
     const fx = this.add.sprite(p.x, p.y, 'death', 0).setOrigin(0.5, 92 / 128).setDepth(p.y);
@@ -359,6 +588,8 @@ export class WorldScene extends Phaser.Scene {
   update(time, delta) {
     const p = this.player;
     for (const g of this.enemies.getChildren()) g.think(time, p);
+    this.updateShots(delta);
+    this.updateEnemyShots(time, delta);
     if (p.dead) return;
 
     // MP terisi pelan
@@ -375,11 +606,21 @@ export class WorldScene extends Phaser.Scene {
     else if (this.attacking) { p.setVelocity(0, 0); }
     else if (time > this.hurtUntil - PLAYER.hurtCooldown + 150) {
       const { x, y } = readMove(this.keys);
-      if (x || y) this.lastMove = { x, y };
+      const moving = x !== 0 || y !== 0;
+      if (moving) {
+        this.lastMove = { x, y };
+        if (Math.abs(y) > Math.abs(x) * 1.15) { this.face = y < 0 ? 'up' : 'down'; p.setFlipX(false); }
+        else { this.face = 'side'; p.setFlipX(x < 0); }
+      }
       const sp = guarding ? SPEED * 0.45 : SPEED;
       p.setVelocity(x * sp, y * sp);
-      if (x !== 0) p.setFlipX(x < 0);
-      p.play(guarding ? 'warrior-guard' : (x !== 0 || y !== 0 ? 'warrior-run' : 'warrior-idle'), true);
+      let key;
+      if (guarding) { this.face = 'side'; key = 'warrior-guard'; }
+      else if (this.face === 'up') key = moving ? 'knight-walkUp' : 'knight-idleUp';
+      else if (this.face === 'down') key = moving ? 'knight-walkDown' : 'knight-idleDown';
+      else if (moving) key = 'warrior-run';
+      else key = this.shieldOut ? 'knight-noShield' : this.swordOut ? 'knight-noSword' : 'warrior-idle';
+      this.playP(key);
     }
     // gelembung perisai
     this.fx.clear();

@@ -56,6 +56,7 @@ export default async function (t) {
   await t('musuh palsu & id titik aneh ditolak', async () => {
     await assert.rejects(call(db, 'api_claimkill', ['goblin:1', 'naga'], as(A)), /tidak dikenal/);
     await assert.rejects(call(db, 'api_claimkill', ["x'; drop", 'goblin'], as(A)), /tidak sah/);
+    await assert.rejects(call(db, 'api_claimkill', ['hog:1', 'goblin'], as(A)), /bukan milik/);
   });
 
   await t('batas kill per menit', async () => {
